@@ -48,7 +48,7 @@ addLayer("f", {
     },
     prestigeButtonText(){
         let str = `Reset tubes for +<b>${formatWhole(this.getResetGain())}</b> tube factories`
-        if (this.currencyAfterReset().lt(200)) str += `<br/><br/>Req: ${format(player.points)} / ${format(this.getNextAt())} tubes.`
+        if (this.currencyAfterReset().lt(2e3)) str += `<br/><br/>Next: ${format(player.points)} / ${format(this.getNextAt())} tubes.`
         return str
     },
     canBuyMax(){return true},
@@ -71,6 +71,7 @@ addLayer("f", {
     tabFormat: {
         "Main tab": {
             content:[
+                ["infobox", "welcome"],
                 "main-display",
                 "prestige-button",
                 [
@@ -90,7 +91,7 @@ addLayer("f", {
                 ],
                 "blank",
                 "buyables",
-                "upgrades"
+                "upgrades",
             ]
         },
         "Burning":{
@@ -124,7 +125,7 @@ addLayer("f", {
         },
         14: {
             title: "The factory must grow FASTER",
-            description() {return `Tube factories are ${format(this.base())}x more effective per tube factory. (Softcaps at ${format(this.softcap)}x)`},
+            description() {return `Tube factories are ${format(this.base())}x more effective per tube factory. (HARSHLY softcaps at ${format(this.softcap)}x)`},
             cost: new Decimal(10),
             softcap: new Decimal('1e30'),
             base(){
@@ -135,7 +136,7 @@ addLayer("f", {
             effect() {
                 let effect_before_softcap = this.base().pow(player[this.layer].points)
                 if (effect_before_softcap.lte(this.softcap)) return effect_before_softcap
-                return this.softcap.times(effect_before_softcap.minus(this.softcap).add(1).log10().add(1).log10().pow(10)).min(effect_before_softcap)
+                return this.softcap.times(effect_before_softcap.minus(this.softcap).iteratedlog(2)).min(effect_before_softcap)
             },
             effectDisplay() {
                 return format(upgradeEffect(this.layer, this.id))+"x" 
@@ -209,6 +210,14 @@ addLayer("f", {
             unlocked(){return hasUpgrade('f', 16)}
         },
     },
+    infoboxes: {
+        welcome:{
+            title: "Welcome!",
+            body(){
+                return `You are a scientist who have just discovered <i>tubes</i>, weird quantum-level particles that look like... tubes. You just want to make more of it...<br/>`
+            },
+        },
+    },
 })
 addLayer('fire', {
     name: "Fire",
@@ -219,6 +228,7 @@ addLayer('fire', {
     resource: "fire",
     color: "#f80",
     tabFormat:[
+        ["infobox", "burning"],
         "main-display",
         "clickables",
         "blank",
@@ -274,10 +284,69 @@ addLayer('fire', {
             cost: new Decimal(490),
         }
     },
+    infoboxes:{
+        burning:{
+            name: "Burning",
+            body(){
+                return `<b>TL;DR: hit the 'burn' button, wait a few seconds, buy tube factories and fire upgrades, and repeat.</b><br/><br/>
+                You have unlocked a way to ignite those tubes you just created, and that is just as well as you're limited on space to make those glorious factories. Burning will give you more space for your factories. When you burn, you stop gaining tubes, and you lose tubes in a superexponential rate, defaulting to 2^(2^(burning seconds+1)*2) per second. Based on your burn time, it will give you fire (default is 100 per second). Fire delays the tube factory overflow softcap (default: (fire/100)^2). You can also buy upgrades with fire.<br/><br/>
+                <b>Hint: make sure that you burn your tubes every so often and every time you buy fire upgrades. This is important to keep fire's buff at maximum.`
+            }
+        },
+    },
+})
+addLayer('l', {
+    name: "Lava",
+    symbol: "L",
+    color: "#d00",
+    position: 0,
+    row: 1,
+    branches: ['f'],
+    resource: "lava",
+    baseResource: "fire",
+    baseAmount(){return player.fire.points},
+    startData() { return {
+        unlocked: false,
+        points: new Decimal(0),
+    }},
+    layerShown(){return hasUpgrade('f', 17)},
+    requires(){return new Decimal(510)},
+    type: "normal",
+    exponent: 25,
+    gainMult(){
+        mult = new Decimal(1)
+        mult = mult.times(temp[this.layer].baseAmount)
+        return new Decimal(10)
+    },
+    tooltipLocked(){return `Reach 510 fire to unlock.`}
 })
 addLayer('a', {
-    name: "Achievements",
+    name: "Accretion",
     symbol: "A",
+    color: "#888",
+    position: 1,
+    row: 1,
+    branches: ['f'],
+    resource: "kilograms",
+    baseResource: "tubes",
+    baseAmount(){return player.points},
+    startData() { return {
+        unlocked: false,
+        points: new Decimal(0),
+    }},
+    layerShown(){return hasUpgrade('f', 17)},
+    requires(){return new Decimal(1e43)},
+    type: "normal",
+    exponent: 1,
+    gainMult(){
+        mult = new Decimal(1)
+        return mult
+    },
+    tooltipLocked(){return `Reach 1e43 points to unlock.`}
+})
+addLayer('ach', {
+    name: "Achievements",
+    symbol: "ACH",
     position: 0,
     row: "side",
     resource: "achievements",
