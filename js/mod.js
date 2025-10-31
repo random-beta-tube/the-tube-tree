@@ -12,14 +12,18 @@ let modInfo = {
 
 // Set your version in num and name
 let VERSION = {
-	num: "0.0",
-	name: "Literally nothing",
+	num: "0.0.1",
+	name: "Tubes & Fire",
 }
 
 let changelog = `<h1>Changelog:</h1><br>
-	<h3>v0.0</h3><br>
-		- Added things.<br>
-		- Added stuff.`
+	<h3>v0.0.1</h3><br>
+		- Made the game<br>
+		- Added upgrades<br>
+		- Added achievements<br>
+		- Added the fire subtab.<br>
+		- Added more stuff lol.<br>
+		- Endgame: 1e43 tubes`
 
 let winText = `Congratulations! You have reached the end and beaten this game, but for now...`
 
@@ -40,7 +44,11 @@ function canGenPoints(){
 function getPointGen() {
 	if(!canGenPoints())
 		return new Decimal(0)
-
+	if(getClickableState('fire',11)){
+		let burn_time = player.fire.burn_time
+		let loss = new Decimal(2).pow(new Decimal(2).pow(burn_time.add(1)).times(2))
+		return loss.times(-1)
+	}
 	let gain = new Decimal(0)
 	if (hasUpgrade('f', 11)) gain = gain.add(1);
 	if (hasUpgrade('f', 12)){
@@ -48,6 +56,10 @@ function getPointGen() {
 		if (hasUpgrade('f', 14)){generation = generation.times(upgradeEffect('f', 14))}
 		gain = gain.add(generation);
 	}
+	if (hasAchievement('a', 12)) gain = gain.mul(1.02)
+
+	if (hasUpgrade('fire', 11)) gain = gain.pow(1.1)
+	if (hasUpgrade('fire', 13)) gain = gain.mul(upgradeEffect('fire', 13))
 	return gain
 }
 
@@ -61,7 +73,7 @@ var displayThings = [
 
 // Determines when the game "ends"
 function isEndgame() {
-	return player.points.gte(new Decimal("e280000000"))
+	return player.points.gte(new Decimal("1e43"))
 }
 
 
@@ -75,7 +87,7 @@ var backgroundStyle = {
 
 // You can change this if you have things that can be messed up by long tick lengths
 function maxTickLength() {
-	return(3600) // Default is 1 hour which is just arbitrarily large
+	return(100) // Default is 1 hour which is just arbitrarily large
 }
 
 // Use this if you need to undo inflation from an older version. If the version is older than the version that fixed the issue,

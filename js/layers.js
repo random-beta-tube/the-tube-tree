@@ -14,7 +14,10 @@ addLayer("f", {
     baseAmount() {return player.points}, // Get the current amount of baseResource
     type: "custom", // normal: cost to gain currency depends on amount gained. static: cost depends on how much you already have
     base: new Decimal(2),
-    softcapStart: new Decimal(100),
+    softcapStart(){
+        return new Decimal(100).add(temp.fire.effect)
+    },
+    softcapPower(){return hasUpgrade('fire',12)?new Decimal(0.75):new Decimal(0.5)},
     getBaseGain(){
         let base = player.points.minus(6).max(1).log(this.base).times(this.gainMult()).pow(this.gainExp())
         return base
@@ -25,8 +28,8 @@ addLayer("f", {
             return {amountAfterSoftcap: base, reducedAmount: new Decimal(0)}
         }
         //softcap!!!
-        let overAmount = base.sub(this.softcapStart)
-        let softcapped = overAmount.pow(0.5).add(this.softcapStart)
+        let overAmount = base.sub(temp.f.softcapStart)
+        let softcapped = overAmount.pow(temp.f.softcapPower).add(temp.f.softcapStart)
         return {amountAfterSoftcap:softcapped,reducedAmount:base.sub(softcapped)}
     },
     getResetGain(){
@@ -35,17 +38,17 @@ addLayer("f", {
     currencyAfterReset(){
         return player[this.layer].points.add(this.getResetGain())
     },
-    getNextAt(canMax=false){//only works when there is no softcap, but that's fine since it'd be hidden then
+    getNextAt(canMax=true){
         let req = this.currencyAfterReset().add(1)
+        if (req.gt(temp.f.softcapStart)) req = req.sub(temp.f.softcapStart).pow(1/temp.f.softcapPower).add(temp.f.softcapStart)
         return this.base.pow(req.pow(this.gainExp().pow(-1)).divide(this.gainMult())).add(6)
     },
     canReset(){
         return this.getResetGain().gte(1)
     },
     prestigeButtonText(){
-        console.log(String(this.getNextAt()))
         let str = `Reset tubes for +<b>${formatWhole(this.getResetGain())}</b> tube factories`
-        if (this.currencyAfterReset().lt(100)) str += `<br/><br/>Req: ${format(player.points)} / ${format(this.getNextAt())} tubes.`
+        if (this.currencyAfterReset().lt(200)) str += `<br/><br/>Req: ${format(player.points)} / ${format(this.getNextAt())} tubes.`
         return str
     },
     canBuyMax(){return true},
@@ -62,28 +65,39 @@ addLayer("f", {
         {key: "f", description: "F: Reset for tube factories", onPress(){if (canReset(this.layer)) doReset(this.layer)}},
     ],
     layerShown(){return true},
-    tabFormat: [
-        "main-display",
-        "prestige-button",
-        [
-            "display-text",
-            () => `You have ${formatWhole(player.points)} points`,
-            ""
-        ],
-        [
-            "display-text",
-            () => `Your best tube factory is ${formatWhole(player[this.layer].best)}.`,
-            ""
-        ],
-        [
-            "display-text",
-            () => temp.f.currencyAfterReset.gte(100) ? `Due to <b>factory overflow</b> at ${temp.f.softcapStart} tube factories, any factory gain over this amount is square rooted!<br/>Your factory gain is reduced by ${formatWhole(temp.f.softcappedGain["reducedAmount"])}.` : ``,
-            {color: "red"}
-        ],
-        "blank",
-        "buyables",
-        "upgrades"
-    ],
+    doReset(){
+        setClickableState('fire',11,false)
+    },
+    tabFormat: {
+        "Main tab": {
+            content:[
+                "main-display",
+                "prestige-button",
+                [
+                    "display-text",
+                    () => `You have ${formatWhole(player.points)} points`,
+                    ""
+                ],
+                [
+                    "display-text",
+                    () => `Your best tube factory is ${formatWhole(player[this.layer].best)}.`,
+                    ""
+                ],
+                [
+                    "display-text",
+                    () => temp.f.currencyAfterReset.gte(100) ? `Due to <b>factory overflow</b> at ${format(temp.f.softcapStart)} tube factories, any factory gain over this amount is ^${format(temp.f.softcapPower)}!<br/>Your factory gain is reduced by ${formatWhole(temp.f.softcappedGain["reducedAmount"])}.` : ``,
+                    {color: "red"}
+                ],
+                "blank",
+                "buyables",
+                "upgrades"
+            ]
+        },
+        "Burning":{
+            embedLayer: "fire",
+            unlocked(){return hasUpgrade('f', 17)},
+        }
+    },
     upgrades: {
         11: {
             title: "Start",
@@ -110,19 +124,18 @@ addLayer("f", {
         },
         14: {
             title: "The factory must grow FASTER",
-            description() {return `Tube factories are ${format(this.base())}x more effective per tube factory.`},
+            description() {return `Tube factories are ${format(this.base())}x more effective per tube factory. (Softcaps at ${format(this.softcap)}x)`},
             cost: new Decimal(10),
+            softcap: new Decimal('1e30'),
             base(){
                 let base = new Decimal(1.1)
                 base = base.add(buyableEffect('f', 11))
                 return base
             },
             effect() {
-                //let softcap = new Decimal(100);
                 let effect_before_softcap = this.base().pow(player[this.layer].points)
-                return effect_before_softcap
-                //if (effect_before_softcap.lte(softcap)){return effect_before_softcap}
-                //return softcap.times(effect_before_softcap.minus(softcap).add(1).log10().add(1).log10())
+                if (effect_before_softcap.lte(this.softcap)) return effect_before_softcap
+                return this.softcap.times(effect_before_softcap.minus(this.softcap).add(1).log10().add(1).log10().pow(10)).min(effect_before_softcap)
             },
             effectDisplay() {
                 return format(upgradeEffect(this.layer, this.id))+"x" 
@@ -139,6 +152,12 @@ addLayer("f", {
             title: "Upgrade cubed",
             description: "Unlock a buyable that boosts the previous buyable.",
             cost: new Decimal(36),
+            unlocked(){return hasUpgrade(this.layer,this.id-1)},
+        },
+        17: {
+            title: "Stoke the fire",
+            description: "Unlock the burning subtab.",
+            cost: new Decimal(103),
             unlocked(){return hasUpgrade(this.layer,this.id-1)},
         },
     },
@@ -189,5 +208,98 @@ addLayer("f", {
             },
             unlocked(){return hasUpgrade('f', 16)}
         },
-    }  
+    },
+})
+addLayer('fire', {
+    name: "Fire",
+    symbol: "F",
+    position: 1,
+    row: 1,
+    startData(){return {points: new Decimal(0),burn_time: new Decimal(0),}},
+    resource: "fire",
+    color: "#f80",
+    tabFormat:[
+        "main-display",
+        "clickables",
+        "blank",
+        "upgrades"
+    ],
+    unlocked(){return hasUpgrade('f', 17)},
+    layerShown(){return false},
+    update(diff) {
+        if (getClickableState('fire',11)){
+            if (player.points.gt(0)) player.fire.burn_time = player.fire.burn_time.plus(diff)
+            else{
+                setClickableState('fire',11,false)
+                player.fire.points = player.fire.burn_time.mul(100).max(player.fire.points)
+                player.fire.burn_time = new Decimal(0)
+                if(player.points.lt(0)) player.points = new Decimal(0)
+            }
+        }
+    },
+    effect(){
+        return player.fire.points.divide(100).pow(2)
+    },
+    effectDescription(){
+        return `which delays the tube factory overflow by +${format(temp.fire.effect)} tube factories.`
+    },
+    clickables:{
+        11:{
+            title(){return !getClickableState('fire', 11) ? 'BURN YOUR TUBES' : 'STOP THE BURN'},
+            display(){return !getClickableState('fire', 11) ? `Burning your tubes will stop all tube production, and will superexponentially decrease your tube amount, but you will gain fire base on the length of your burn.` : `Stop the burn. You have been burning for ${format(player.fire.burn_time)} seconds.<br/><br/>Note that doing a tube factory reset now will stop the burn without giving bonuses!`},
+            canClick(){return hasUpgrade('f', 17)},
+            onClick(){setClickableState('fire',11,!getClickableState('fire',11))}
+        },
+    },
+    upgrades:{
+        11: {
+            title: "Steam boost",
+            description: `Raise points production to ^${format(1.1)}`,
+            cost: new Decimal(410),
+        },
+        12: {
+            title: "INFLATION???",
+            description: `Reduce the tube factory overflow penalty by +^0.25.`,
+            cost: new Decimal(455),
+        },
+        13: {
+            title: "Catalyst",
+            description: `Multiply point gain by (log10(tubes+1)+1)^<br/>(fire/200)`,
+            effect(){
+                return player.points.add(1).log10().add(1).pow(player.fire.points.divide(200))
+            },
+            effectDisplay() {
+                return format(upgradeEffect(this.layer, this.id))+"x" 
+            },
+            cost: new Decimal(490),
+        }
+    },
+})
+addLayer('a', {
+    name: "Achievements",
+    symbol: "A",
+    position: 0,
+    row: "side",
+    resource: "achievements",
+    tabFormat:[
+        ["display-text", "Achievements are mostly for bragging but they can give you some cool effects.<br/><br/><br/>", ""],
+        "achievements",
+    ],
+    achievements: {
+        11: {
+            name: "All my tubes are gone!!! D:",
+            tooltip: "Do a tube factory reset. ",
+            done(){return player.f.points.gt(0)}
+        },
+        12: {
+            name: "Exponential production",
+            tooltip: "Buy the fourth tube factory upgrade. Effect: 1.02x point production.",
+            done(){return hasUpgrade('f', 14)}
+        },
+        13: {
+            name: "Overflow",
+            tooltip: "Have 100 tube factories",
+            done(){return player.f.points.gte(100)}
+        },
+    }
 })
