@@ -5,6 +5,7 @@ addLayer("f", {
     startData() { return {
         unlocked: true,
 		points: new Decimal(0),
+        best: new Decimal(0),
     }},
     color: "#dddd00",
     requires: new Decimal(8), // Can be a function that takes requirement increases into account
@@ -13,16 +14,28 @@ addLayer("f", {
     baseAmount() {return player.points}, // Get the current amount of baseResource
     type: "custom", // normal: cost to gain currency depends on amount gained. static: cost depends on how much you already have
     base: new Decimal(2),
+    softcapStart: new Decimal(100),
     getBaseGain(){
-        return player.points.minus(6).max(1).log(this.base).times(this.gainMult()).pow(this.gainExp())
+        let base = player.points.minus(6).max(1).log(this.base).times(this.gainMult()).pow(this.gainExp())
+        return base
+    },
+    softcappedGain(){
+        let base = temp.f.getBaseGain
+        if (base.lte(temp.f.softcapStart)){
+            return {amountAfterSoftcap: base, reducedAmount: new Decimal(0)}
+        }
+        //softcap!!!
+        let overAmount = base.sub(this.softcapStart)
+        let softcapped = overAmount.pow(0.5).add(this.softcapStart)
+        return {amountAfterSoftcap:softcapped,reducedAmount:base.sub(softcapped)}
     },
     getResetGain(){
-        return this.getBaseGain().floor().minus(player[this.layer].points).max(0)
+        return this.softcappedGain()["amountAfterSoftcap"].floor().minus(player[this.layer].points).max(0)
     },
     currencyAfterReset(){
         return player[this.layer].points.add(this.getResetGain())
     },
-    getNextAt(canMax=false){
+    getNextAt(canMax=false){//only works when there is no softcap, but that's fine since it'd be hidden then
         let req = this.currencyAfterReset().add(1)
         return this.base.pow(req.pow(this.gainExp().pow(-1)).divide(this.gainMult())).add(6)
     },
@@ -49,6 +62,28 @@ addLayer("f", {
         {key: "f", description: "F: Reset for tube factories", onPress(){if (canReset(this.layer)) doReset(this.layer)}},
     ],
     layerShown(){return true},
+    tabFormat: [
+        "main-display",
+        "prestige-button",
+        [
+            "display-text",
+            () => `You have ${formatWhole(player.points)} points`,
+            ""
+        ],
+        [
+            "display-text",
+            () => `Your best tube factory is ${formatWhole(player[this.layer].best)}.`,
+            ""
+        ],
+        [
+            "display-text",
+            () => temp.f.currencyAfterReset.gte(100) ? `Due to <b>factory overflow</b> at ${temp.f.softcapStart} tube factories, any factory gain over this amount is square rooted!<br/>Your factory gain is reduced by ${formatWhole(temp.f.softcappedGain["reducedAmount"])}.` : ``,
+            {color: "red"}
+        ],
+        "blank",
+        "buyables",
+        "upgrades"
+    ],
     upgrades: {
         11: {
             title: "Start",
@@ -58,18 +93,20 @@ addLayer("f", {
         12: {
             title: "Turn on the factory",
             description: "Each tube factory now produces 1 tube per second.",
-            cost: new Decimal(2),
+            cost: new Decimal(1),
+            unlocked(){return hasUpgrade(this.layer,this.id-1)},
         },
         13: {
             title: "The factory must grow",
-            description: "Multiply tube factory gain based on itself.",
+            description: "Multiply tube factory gain based on your best tube factory.",
             cost: new Decimal(4),
             effect() {
-                return player[this.layer].points.add(1).log(2).add(1).pow(0.5)
+                return player[this.layer].best.add(1).log(2).add(1).pow(0.5)
             },
             effectDisplay() {
                 return format(upgradeEffect(this.layer, this.id))+"x" 
             },
+            unlocked(){return hasUpgrade(this.layer,this.id-1)},
         },
         14: {
             title: "The factory must grow FASTER",
@@ -90,22 +127,35 @@ addLayer("f", {
             effectDisplay() {
                 return format(upgradeEffect(this.layer, this.id))+"x" 
             },
+            unlocked(){return hasUpgrade(this.layer,this.id-1)},
         },
         15: {
             title: "Upgrade squared",
-            description: "Unlock a buyable.",
-            cost: new Decimal(22),
+            description: "Unlock a buyable that boosts the previous upgrade.",
+            cost: new Decimal(18),
+            unlocked(){return hasUpgrade(this.layer,this.id-1)},
+        },
+        16: {
+            title: "Upgrade cubed",
+            description: "Unlock a buyable that boosts the previous buyable.",
+            cost: new Decimal(36),
+            unlocked(){return hasUpgrade(this.layer,this.id-1)},
         },
     },
     buyables: {
         11: {
             cost(x) { return new Decimal(16).times(new Decimal(2).pow(x)) },
+            base(){
+                let base = new Decimal(0.05)
+                base = base.add(buyableEffect('f', 12))
+                return base
+            },
             display() { return `
                 <b>Base Increase</b><br/>
-                Increase the base of 'The factory must grow FASTER' by +0.05.<br/>
+                Increase the base of 'The factory must grow FASTER' by +${format(this.base())}.<br/>
                 Cost: ${format(this.cost())} tube factories.
                 Amount: ${getBuyableAmount(this.layer, this.id)}
-                Effect: +${this.effect()} 
+                Effect: +${format(this.effect())} 
             ` },
             canAfford() { return player[this.layer].points.gte(this.cost()) },
             buy() {
@@ -114,9 +164,30 @@ addLayer("f", {
             },
             effect(){
                 let ownedAmount = getBuyableAmount(this.layer, this.id)
-                return ownedAmount.mul(0.05)
+                return ownedAmount.mul(this.base())
             },
             unlocked(){return hasUpgrade('f', 15)}
+        },
+        12: {
+            cost(x) { return new Decimal(40).times(new Decimal(3).pow(x)) },
+            base(){return new Decimal(0.02)},
+            display() { return `
+                <b>Base Increase Increaser</b><br/>
+                Increase the base of 'Base Increase' by +${format(this.base())}.<br/>
+                Cost: ${format(this.cost())} tube factories.
+                Amount: ${getBuyableAmount(this.layer, this.id)}
+                Effect: +${format(this.effect())} 
+            ` },
+            canAfford() { return player[this.layer].points.gte(this.cost()) },
+            buy() {
+                player[this.layer].points = player[this.layer].points.sub(this.cost())
+                setBuyableAmount(this.layer, this.id, getBuyableAmount(this.layer, this.id).add(1))
+            },
+            effect(){
+                let ownedAmount = getBuyableAmount(this.layer, this.id)
+                return ownedAmount.mul(this.base())
+            },
+            unlocked(){return hasUpgrade('f', 16)}
         },
     }  
 })
