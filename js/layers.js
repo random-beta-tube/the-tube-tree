@@ -80,7 +80,7 @@ addLayer("f", {
                 ],
                 [
                     "display-text",
-                    () => `Your best tube factory is ${formatWhole(player[this.layer].best)}.`,
+                    () => `Your best tube factory is ${formatWhole(player.f.best)}.`,
                     ""
                 ],
                 [
