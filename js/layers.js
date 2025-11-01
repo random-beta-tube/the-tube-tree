@@ -48,7 +48,7 @@ addLayer("f", {
     },
     prestigeButtonText(){
         let str = `Reset tubes for +<b>${formatWhole(this.getResetGain())}</b> tube factories`
-        if (this.currencyAfterReset().lt(2e3)) str += `<br/><br/>Next: ${format(player.points)} / ${format(this.getNextAt())} tubes.`
+        if (this.currencyAfterReset().lt(2e3)) str += `<br/><br/>Next: ${format(player.points)} / ${format(this.getNextAt())} tubes`
         return str
     },
     canBuyMax(){return true},
@@ -60,14 +60,11 @@ addLayer("f", {
     gainExp() { // Calculate the exponent on main currency from bonuses
         return new Decimal(1)
     },
-    row: 0, // Row the layer is in on the tree (0 is the first row)
+    row: 1, // Row the layer is in on the tree (0 is the first row)
     hotkeys: [
         {key: "f", description: "F: Reset for tube factories", onPress(){if (canReset(this.layer)) doReset(this.layer)}},
     ],
     layerShown(){return true},
-    doReset(){
-        setClickableState('fire',11,false)
-    },
     tabFormat: {
         "Main tab": {
             content:[
@@ -125,18 +122,23 @@ addLayer("f", {
         },
         14: {
             title: "The factory must grow FASTER",
-            description() {return `Tube factories are ${format(this.base())}x more effective per tube factory. (HARSHLY softcaps at ${format(this.softcap)}x)`},
+            description() {return `Tube factories are ${format(this.base())}x more effective per tube factory. (HARSHLY softcaps at ${format(this.softcap())}x)`},
             cost: new Decimal(10),
-            softcap: new Decimal('1e30'),
+            softcap() {
+                let sc = new Decimal('1e30')
+                if (player.l.unlocked) sc = sc.times(temp.l.effect[1])
+                return sc
+            },
             base(){
                 let base = new Decimal(1.1)
                 base = base.add(buyableEffect('f', 11))
                 return base
             },
             effect() {
+                let sc = this.softcap()
                 let effect_before_softcap = this.base().pow(player[this.layer].points)
-                if (effect_before_softcap.lte(this.softcap)) return effect_before_softcap
-                return this.softcap.times(effect_before_softcap.minus(this.softcap).iteratedlog(2)).min(effect_before_softcap)
+                if (effect_before_softcap.lte(sc)) return effect_before_softcap
+                return sc.times(effect_before_softcap.minus(sc).iteratedlog(2)).min(effect_before_softcap)
             },
             effectDisplay() {
                 return format(upgradeEffect(this.layer, this.id))+"x" 
@@ -223,7 +225,7 @@ addLayer('fire', {
     name: "Fire",
     symbol: "F",
     position: 1,
-    row: 1,
+    row: 0,
     startData(){return {points: new Decimal(0),burn_time: new Decimal(0),}},
     resource: "fire",
     color: "#f80",
@@ -248,10 +250,19 @@ addLayer('fire', {
         }
     },
     effect(){
-        return player.fire.points.divide(100).pow(2)
+        let eff = player.fire.points.divide(100).pow(2)
+        if (player.l.unlocked) eff = eff.times(temp.l.effect[0])
+        return eff
     },
     effectDescription(){
         return `which delays the tube factory overflow by +${format(temp.fire.effect)} tube factories.`
+    },
+    doReset(resettingLayer){
+        if (layers[resettingLayer].row < 2){
+            setClickableState('fire',11,false)
+        } else {
+            layerDataReset("fire", [])
+        }
     },
     clickables:{
         11:{
@@ -300,7 +311,7 @@ addLayer('l', {
     symbol: "L",
     color: "#d00",
     position: 0,
-    row: 1,
+    row: 2,
     branches: ['f'],
     resource: "lava",
     baseResource: "fire",
@@ -309,8 +320,8 @@ addLayer('l', {
         unlocked: false,
         points: new Decimal(0),
     }},
-    layerShown(){return hasUpgrade('f', 17)},
-    requires(){return new Decimal(510)},
+    layerShown(){return player.l.unlocked || hasUpgrade('f', 17) || hasAchievement('ach', 14)},
+    requires(){return player.a.unlocked ? new Decimal(820) : new Decimal(510)},
     type: "normal",
     exponent: 25,
     gainMult(){
@@ -318,31 +329,39 @@ addLayer('l', {
         mult = mult.times(temp[this.layer].baseAmount)
         return new Decimal(10)
     },
-    tooltipLocked(){return `Reach 510 fire to unlock.`}
+    tooltipLocked(){return `Reach ${format(temp[this.layer].requires)} fire to unlock.`},
+    effect(){
+        let first = player[this.layer].points.add(1).pow(0.1)
+        let second = player[this.layer].points.add(1).pow(2)
+        return [first, second]
+    },
+    effectDescription(){
+        return `which provides a ${format(temp.l.effect[0])}x boost to fire's effect and delays the fourth tube factory upgrade's softcap by ${format(temp.l.effect[1])}x.`
+    }
 })
 addLayer('a', {
     name: "Accretion",
     symbol: "A",
     color: "#888",
     position: 1,
-    row: 1,
+    row: 2,
     branches: ['f'],
     resource: "kilograms",
     baseResource: "tubes",
     baseAmount(){return player.points},
-    startData() { return {
+    startData() {return {
         unlocked: false,
         points: new Decimal(0),
     }},
-    layerShown(){return hasUpgrade('f', 17)},
-    requires(){return new Decimal(1e43)},
+    layerShown(){return player.a.unlocked || hasUpgrade('f', 17) || hasAchievement('ach', 14)},
+    requires(){return player.l.unlocked ? new Decimal(1e80) : new Decimal(1e43)},
     type: "normal",
-    exponent: 1,
+    exponent: 0.5,
     gainMult(){
         mult = new Decimal(1)
         return mult
     },
-    tooltipLocked(){return `Reach 1e43 points to unlock.`}
+    tooltipLocked(){return `Reach ${format(temp[this.layer].requires)} points to unlock.`}
 })
 addLayer('ach', {
     name: "Achievements",
@@ -367,8 +386,13 @@ addLayer('ach', {
         },
         13: {
             name: "Overflow",
-            tooltip: "Have 100 tube factories",
+            tooltip: "Have 100 tube factories.",
             done(){return player.f.points.gte(100)}
+        },
+        14: {
+            name: "ALL MY PROGRESS IS GONE AGAIN!!!!! D: D: D:",
+            tooltip: "Perform a row 2 reset. Reward: 4x point production.",
+            done(){return player.a.unlocked || player.l.unlocked}
         },
     }
 })
